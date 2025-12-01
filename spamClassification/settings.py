@@ -127,8 +127,11 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Allow hosts in production by setting the environment variable DJANGO_ALLOWED_HOSTS
 import os
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost 127.0.0.1 email-spam-classification-2-gs4w.onrender.com').split()
-
+ALLOWED_HOSTS = [
+    'email-spam-classification-2-gs4w.onrender.com',
+    'localhost',
+    '127.0.0.1'
+]
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Spam Classifier</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+        padding: 24px;
+        background: #f7fafc;
+      }
+      .card {
+        background: #fff;
+        border-radius: 8px;
+        padding: 18px;
+        max-width: 900px;
+        margin: 0 auto;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+      }
+      textarea {
+        width: 100%;
+        min-height: 140px;
+        padding: 10px;
+        font-size: 14px;
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+      }
+      button {
+        background: #1f2937;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .result {
+        margin-top: 12px;
+        padding: 12px;
+        border-radius: 6px;
+        border: 1px dashed #cbd5e1;
+        background: #f8fafc;
+      }
+      .history-item {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+      }
+      .tag-spam {
+        color: #9b1c1c;
+        font-weight: 700;
+      }
+      .tag-ham {
+        color: #155e75;
+        font-weight: 700;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 8px;
+      }
+      .meta {
+        font-size: 12px;
+        color: #6b7280;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Email Spam Classifier</h1>
+      <p class="meta">
+        Type or paste an email (subject + body) and press
+        <strong>Classify</strong>. This page will call the local backend and
+        display iterative classification results without a reload.
+      </p>
+
+      <form id="classify-form">
+        <label for="emailText"><strong>Email text</strong></label>
+        <textarea
+          id="emailText"
+          name="email"
+          placeholder="Example: Get the best deals — free shipping! Claim now..."
+          required
+        ></textarea>
+        <div class="controls">
+          <button id="submitBtn">Classify</button>
+          <button type="button" id="clearBtn">Clear</button>
+          <div style="margin-left: auto" class="meta">
+            History: <span id="historyCount">0</span>
+          </div>
+        </div>
+      </form>
+
+      <div id="resultArea" style="display: none" class="result">
+        <div><strong>Label:</strong> <span id="labelText"></span></div>
+        <div>
+          <strong>Confidence:</strong> <span id="confidenceText"></span>
+        </div>
+        <div style="margin-top: 8px"><strong>Reason / Highlights</strong></div>
+        <pre id="explain" style="white-space: pre-wrap"></pre>
+      </div>
+
+      <details style="margin-top: 14px">
+        <summary style="cursor: pointer">Classification history</summary>
+        <div id="historyList" style="max-height: 240px; overflow: auto"></div>
+      </details>
+
+      <hr />
+      <p class="meta">
+        This is a minimal, local example — the classifier used by the server is
+        a small heuristic. You can replace it later with an ML model.
+      </p>
+    </div>
+
+    <script>
+      // Basic helper to read csrftoken cookie (Django default)
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== "") {
+          const cookies = document.cookie.split(";");
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === name + "=") {
+              cookieValue = decodeURIComponent(
+                cookie.substring(name.length + 1)
+              );
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+
+      const form = document.getElementById("classify-form");
+      const submitBtn = document.getElementById("submitBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const emailText = document.getElementById("emailText");
+      const resultArea = document.getElementById("resultArea");
+      const labelText = document.getElementById("labelText");
+      const confidenceText = document.getElementById("confidenceText");
+      const explainEl = document.getElementById("explain");
+      const historyList = document.getElementById("historyList");
+      const historyCount = document.getElementById("historyCount");
+
+      let history = [];
+
+      function updateHistoryUI() {
+        historyCount.textContent = history.length;
+        historyList.innerHTML = "";
+        history
+          .slice()
+          .reverse()
+          .forEach((item) => {
+            const div = document.createElement("div");
+            div.className = "history-item";
+            div.innerHTML = `<div><strong class="${
+              item.label === "spam" ? "tag-spam" : "tag-ham"
+            }">${item.label.toUpperCase()}</strong> <span style="color:#6b7280; font-size:12px">${
+              item.confidence
+            }%</span></div><div style="margin-top:6px; white-space:pre-wrap">${escapeHtml(
+              item.text
+            )}</div>`;
+            historyList.appendChild(div);
+          });
+      }
+
+      function escapeHtml(unsafe) {
+        return unsafe
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/\'/g, "&#039;");
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const txt = emailText.value.trim();
+        if (!txt) return;
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Classifying…";
+
+        try {
+          const csrftoken = getCookie("csrftoken");
+          const resp = await fetch("/classify/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": csrftoken || "",
+            },
+            body: JSON.stringify({ text: txt }),
+          });
+
+          if (!resp.ok) throw new Error("Server returned " + resp.status);
+
+          const data = await resp.json();
+
+          labelText.textContent = data.label;
+          confidenceText.textContent = (data.confidence * 100).toFixed(1) + "%";
+          explainEl.textContent = data.explanation || "";
+          resultArea.style.display = "block";
+
+          history.push({
+            text: txt,
+            label: data.label,
+            confidence: Math.round(data.confidence * 100),
+          });
+          updateHistoryUI();
+        } catch (err) {
+          alert("Error classifying: " + err);
+          console.error(err);
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Classify";
+        }
+      });
+
+      clearBtn.addEventListener("click", () => {
+        emailText.value = "";
+        resultArea.style.display = "none";
+      });
+    </script>
+  </body>
+</html>

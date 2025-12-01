@@ -25,7 +25,11 @@ SECRET_KEY = 'django-insecure-ncp#ps*9tz3mxo*n!ae%-7j*288hdlv@ivh3okrv4329k5=qj=
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+    'email-spam-classification-1-wtdd.onrender.com',
+    '127.0.0.1',
+    'localhost'
+]
 
 
 
